@@ -202,6 +202,15 @@ export default function App() {
   const [candidates, setCandidates] = useState([]);
   const [scrutinResults, setScrutinResults] = useState({});
   const [voteHash, setVoteHash] = useState("");
+  const [votedScrutins, setVotedScrutins] = useState(new Set());
+
+  const isVoted = (scId) => {
+    if (votedScrutins.has(scId)) return true;
+    const sc = activeScrutins.find(s => s.id === scId);
+    if (sc && sc.a_vote) return true;
+    if (studentProfile?.a_vote && activeScrutins.length === 1) return true;
+    return false;
+  };
 
   // Admin dynamic states
   const [adminScrutins, setAdminScrutins] = useState([]);
@@ -311,6 +320,18 @@ export default function App() {
       if (active.length > 0 && !voteSc) {
         setVoteSc(active[0].id);
       }
+
+      // Populate votedScrutins from active
+      const votedSet = new Set();
+      active.forEach(sc => {
+        if (sc.a_vote) {
+          votedSet.add(sc.id);
+        }
+      });
+      if (studentProfile?.a_vote && active.length === 1) {
+        votedSet.add(active[0].id);
+      }
+      setVotedScrutins(votedSet);
     } catch (err) {
       console.error(err);
     }
@@ -733,8 +754,16 @@ export default function App() {
       setVoteHash(res?.hash_vote || "Bulletins chiffrés SHA-256");
       setShowConfirmVote(false); 
       
+      // Update local set of voted scrutins instantly to bypass Redis cache
+      setVotedScrutins(prev => {
+        const next = new Set(prev);
+        next.add(voteSc);
+        return next;
+      });
+      
       // Refresh list to mark voted
       await loadStudentData();
+      await loadStudentProfile();
       
       setTimeout(()=>setShowVoteSuccess(true),200);
     } catch (err) {
@@ -951,17 +980,56 @@ export default function App() {
               </FormGroup>
               
               <FormGroup label="Vérification de sécurité *">
-                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                  {captcha.imgUrl ? (
-                    <img src={captcha.imgUrl} alt="Captcha" style={{ height: 42, border: `1px solid ${BDR}`, borderRadius: 8 }} />
-                  ) : (
-                    <div style={{ height: 42, width: 120, background: GRAY, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.78rem", color: GD2 }}>Chargement...</div>
-                  )}
-                  <button type="button" onClick={loadNewCaptcha} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, color: G }} title="Rafraîchir">
-                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg>
-                  </button>
+                <div style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  background: "#F3F4F6",
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${BDR}`,
+                  marginBottom: 10,
+                  justifyContent: "space-between"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={GD2} strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span style={{ fontSize: "0.75rem", color: GD2, fontWeight: 500 }}>CAPTCHA de sécurité</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {captcha.imgUrl ? (
+                      <img src={captcha.imgUrl} alt="Captcha" style={{
+                        height: 38,
+                        borderRadius: 6,
+                        border: `1px solid #D1D5DB`,
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                        background: "white",
+                        objectFit: "contain"
+                      }} />
+                    ) : (
+                      <div style={{ height: 38, width: 100, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>Chargement...</div>
+                    )}
+                    <button type="button" onClick={loadNewCaptcha} style={{
+                      background: "white",
+                      border: `1px solid #D1D5DB`,
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      width: 38,
+                      height: 38,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: G,
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                      transition: "all 0.2s"
+                    }} title="Rafraîchir" onMouseEnter={e => e.currentTarget.style.borderColor = G} onMouseLeave={e => e.currentTarget.style.borderColor = '#D1D5DB'}>
+                      <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg>
+                    </button>
+                  </div>
                 </div>
-                <Input value={captcha.val} onChange={v => setCaptcha(prev => ({ ...prev, val: v }))} placeholder="Entrez le code de l'image" />
+                <Input value={captcha.val} onChange={v => setCaptcha(prev => ({ ...prev, val: v }))} placeholder="Saisir le code ci-dessus" style={{ letterSpacing: "0.05em", textAlign: "center", fontWeight: 600, fontFamily: "monospace" }} />
               </FormGroup>
 
               <Btn full onClick={handleLogin} style={{marginTop:4}}>Se connecter</Btn>
@@ -998,17 +1066,56 @@ export default function App() {
               </FormGroup>
 
               <FormGroup label="Vérification de sécurité *">
-                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                  {captcha.imgUrl ? (
-                    <img src={captcha.imgUrl} alt="Captcha" style={{ height: 42, border: `1px solid ${BDR}`, borderRadius: 8 }} />
-                  ) : (
-                    <div style={{ height: 42, width: 120, background: GRAY, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.78rem", color: GD2 }}>Chargement...</div>
-                  )}
-                  <button type="button" onClick={loadNewCaptcha} style={{ background: "none", border: "none", cursor: "pointer", padding: 8, color: G }} title="Rafraîchir">
-                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg>
-                  </button>
+                <div style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  background: "#F3F4F6",
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${BDR}`,
+                  marginBottom: 10,
+                  justifyContent: "space-between"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={GD2} strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span style={{ fontSize: "0.75rem", color: GD2, fontWeight: 500 }}>CAPTCHA de sécurité</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {captcha.imgUrl ? (
+                      <img src={captcha.imgUrl} alt="Captcha" style={{
+                        height: 38,
+                        borderRadius: 6,
+                        border: `1px solid #D1D5DB`,
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                        background: "white",
+                        objectFit: "contain"
+                      }} />
+                    ) : (
+                      <div style={{ height: 38, width: 100, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>Chargement...</div>
+                    )}
+                    <button type="button" onClick={loadNewCaptcha} style={{
+                      background: "white",
+                      border: `1px solid #D1D5DB`,
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      width: 38,
+                      height: 38,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: G,
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                      transition: "all 0.2s"
+                    }} title="Rafraîchir" onMouseEnter={e => e.currentTarget.style.borderColor = G} onMouseLeave={e => e.currentTarget.style.borderColor = '#D1D5DB'}>
+                      <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg>
+                    </button>
+                  </div>
                 </div>
-                <Input value={captcha.val} onChange={v => setCaptcha(prev => ({ ...prev, val: v }))} placeholder="Entrez le code de l'image" />
+                <Input value={captcha.val} onChange={v => setCaptcha(prev => ({ ...prev, val: v }))} placeholder="Saisir le code ci-dessus" style={{ letterSpacing: "0.05em", textAlign: "center", fontWeight: 600, fontFamily: "monospace" }} />
               </FormGroup>
 
               <Btn full onClick={handleRegister}>Créer mon compte</Btn>
@@ -1031,7 +1138,7 @@ export default function App() {
                     <Btn onClick={()=>goTo("vote")}>Voter maintenant</Btn>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:16,marginBottom:24}}>
-                    {[[activeScrutins.length,"Scrutins éligibles",G,GP],[studentProfile?.a_vote ? 1 : 0,"Votes émis",BL,BLL],[closedScrutins.length,"Scrutins clôturés",AMB,AMBL],[(studentProfile?.niveau || "L3"), (studentProfile?.filiere || "Génie Logiciel"),G,GP]].map(([v,l,col,bg])=>(
+                    {[[activeScrutins.length,"Scrutins éligibles",G,GP],[votedScrutins.size,"Votes émis",BL,BLL],[closedScrutins.length,"Scrutins clôturés",AMB,AMBL],[(studentProfile?.niveau || "L3"), (studentProfile?.filiere || "Génie Logiciel"),G,GP]].map(([v,l,col,bg])=>(
                       <Card key={l} style={{padding:20}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                           <div style={{width:40,height:40,borderRadius:8,background:bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1058,8 +1165,8 @@ export default function App() {
                               <td style={{padding:"12px 14px",fontSize:"0.875rem",fontWeight:600}}>{sc.titre}</td>
                               <td style={{padding:"12px 14px"}}><Badge>{(sc.filiere||"Toutes filières")+(sc.niveau?" / "+sc.niveau:"")}</Badge></td>
                               <td style={{padding:"12px 14px",fontSize:"0.875rem",color:GD2}}>{fmtDate(sc.fin)}</td>
-                              <td style={{padding:"12px 14px"}}>{studentProfile?.a_vote ? <Badge color="green">Vote émis ✓</Badge> : <Badge color="amber">Pas encore voté</Badge>}</td>
-                              <td style={{padding:"12px 14px"}}>{studentProfile?.a_vote ? <Btn size="sm" variant="outline" disabled>Voté</Btn> : <Btn size="sm" onClick={()=>{setVoteSc(sc.id);goTo("vote");}}>Voter</Btn>}</td>
+                              <td style={{padding:"12px 14px"}}>{isVoted(sc.id) ? <Badge color="green">Vote émis ✓</Badge> : <Badge color="amber">Pas encore voté</Badge>}</td>
+                              <td style={{padding:"12px 14px"}}>{isVoted(sc.id) ? <Btn size="sm" variant="outline" disabled>Voté</Btn> : <Btn size="sm" onClick={()=>{setVoteSc(sc.id);goTo("vote");}}>Voter</Btn>}</td>
                             </tr>
                           ))}
                           {activeScrutins.length === 0 && (
@@ -1083,7 +1190,7 @@ export default function App() {
                   </div>
                   {voteSc&&(()=>{
                     const sc=activeScrutins.find(s=>s.id===voteSc);
-                    const voted=studentProfile?.a_vote;
+                    const voted=isVoted(voteSc);
                     return (<>
                       <Card style={{padding:"20px 24px",marginBottom:20}}>
                         <h2 style={{fontFamily:"'Sora',sans-serif",fontWeight:700,fontSize:"1.2rem",marginBottom:4}}>{sc?.titre}</h2>
@@ -1159,7 +1266,7 @@ export default function App() {
                       <div style={{color:GD2,fontSize:"0.875rem",marginTop:3}}>Étudiant · {studentProfile?.filiere} · {studentProfile?.niveau}</div>
                       <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><Badge>Compte actif</Badge><Badge color="blue">{activeScrutins.length} scrutins éligibles</Badge></div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:20}}>
-                        {[["Matricule",studentProfile?.matricule],["Email",studentProfile?.email],["Filière",studentProfile?.filiere],["Niveau",studentProfile?.niveau],["Date d'inscription",fmtDate(studentProfile?.created_at)],["A voté",studentProfile?.a_vote ? "Oui" : "Non"]].map(([l,v])=>(
+                        {[["Matricule",studentProfile?.matricule],["Email",studentProfile?.email],["Filière",studentProfile?.filiere],["Niveau",studentProfile?.niveau],["Date d'inscription",fmtDate(studentProfile?.created_at)],["A voté",studentProfile?.a_vote || votedScrutins.size > 0 ? "Oui" : "Non"]].map(([l,v])=>(
                           <div key={l}><div style={{fontSize:"0.73rem",fontWeight:700,color:GM2,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>{l}</div><div style={{fontSize:"0.9rem",fontWeight:600}}>{v}</div></div>
                         ))}
                       </div>

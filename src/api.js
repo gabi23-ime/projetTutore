@@ -96,7 +96,8 @@ export const mapScrutinFromApi = (s) => ({
   eligible: s.nb_eligibles ? Number(s.nb_eligibles) : 0,
   nb_candidats: s.nb_candidats ? Number(s.nb_candidats) : 0,
   created_by_nom: s.created_by_nom || 'Admin',
-  created_at: s.created_at
+  created_at: s.created_at,
+  a_vote: s.a_vote || s.deja_vote || s.voted || false
 });
 
 export const mapScrutinToApi = (s) => ({
@@ -155,7 +156,11 @@ export const api = {
     getCaptcha: async () => {
       const res = await request('/auth/captcha/');
       if (!res.ok) throw new Error("Impossible de charger le captcha");
-      return res.json();
+      const data = await res.json();
+      if (data.captcha_image_url && !data.captcha_image_url.startsWith('http')) {
+        data.captcha_image_url = `https://vote-backend-api.onrender.com${data.captcha_image_url}`;
+      }
+      return data;
     },
 
     login: async (username, password, captchaKey, captchaValue) => {
