@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://vote-backend-api.onrender.com/api/v1';
+const API_BASE_URL = '/api/v1';
 
 // Token helpers
 export const getToken = () => localStorage.getItem('token');
@@ -189,9 +189,9 @@ export const api = {
         clearTimeout(timeoutId);
         if (!res.ok) throw new Error("Impossible de charger le captcha");
         const data = await res.json();
-        // Ensure absolute URL
+        // Ensure URL passes through Vercel proxy
         if (data.captcha_image_url && !data.captcha_image_url.startsWith('http')) {
-          data.captcha_image_url = `https://vote-backend-api.onrender.com${data.captcha_image_url}`;
+          data.captcha_image_url = `/api/v1${data.captcha_image_url}`;
         }
         return data;
       } catch (err) {
