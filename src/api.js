@@ -30,31 +30,35 @@ async function request(endpoint, options = {}) {
 
   // If unauthorized, attempt to refresh token
   if (response.status === 401) {
-    const refresh = getRefreshToken();
-    if (refresh && endpoint !== '/auth/token/refresh/' && endpoint !== '/auth/login/') {
-      try {
-        const refreshResponse = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh }),
-        });
+    if (endpoint === '/auth/login/') {
+      // Don't trigger logout on failed login attempts, let the caller handle it
+    } else {
+      const refresh = getRefreshToken();
+      if (refresh && endpoint !== '/auth/token/refresh/') {
+        try {
+          const refreshResponse = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh }),
+          });
 
-        if (refreshResponse.ok) {
-          const refreshData = await refreshResponse.json();
-          setToken(refreshData.access);
-          
-          // Retry the request with the new token
-          headers['Authorization'] = `Bearer ${refreshData.access}`;
-          response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-        } else {
-          // Refresh token invalid/expired, log out
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            setToken(refreshData.access);
+            
+            // Retry the request with the new token
+            headers['Authorization'] = `Bearer ${refreshData.access}`;
+            response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+          } else {
+            // Refresh token invalid/expired, log out
+            logoutLocal();
+          }
+        } catch (err) {
           logoutLocal();
         }
-      } catch (err) {
+      } else {
         logoutLocal();
       }
-    } else {
-      logoutLocal();
     }
   }
 
@@ -67,6 +71,29 @@ function logoutLocal() {
   if (window.onLogoutTrigger) {
     window.onLogoutTrigger();
   }
+}
+
+// Parse Django REST Framework error responses
+function parseDjangoError(data, fallback) {
+  if (!data) return fallback;
+  if (typeof data === 'string') return data;
+  // Standard DRF error fields
+  if (data.detail) return data.detail;
+  if (data.message) return data.message;
+  if (data.error) return data.error;
+  // Field-level errors (non_field_errors, captcha_value, etc.)
+  if (data.non_field_errors) {
+    const arr = data.non_field_errors;
+    return Array.isArray(arr) ? arr[0] : arr;
+  }
+  // Any array field error
+  const keys = Object.keys(data);
+  for (const key of keys) {
+    const val = data[key];
+    if (Array.isArray(val) && val.length > 0) return `${key}: ${val[0]}`;
+    if (typeof val === 'string') return `${key}: ${val}`;
+  }
+  return fallback;
 }
 
 // Data Mappers (maps backend structures to the front-end style and vice versa)
@@ -154,13 +181,24 @@ export const api = {
   // Authentication & CAPTCHA
   auth: {
     getCaptcha: async () => {
-      const res = await request('/auth/captcha/');
-      if (!res.ok) throw new Error("Impossible de charger le captcha");
-      const data = await res.json();
-      if (data.captcha_image_url && !data.captcha_image_url.startsWith('http')) {
-        data.captcha_image_url = `https://vote-backend-api.onrender.com${data.captcha_image_url}`;
+      // Add timeout to handle Render.com cold start (up to 60s)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/captcha/`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error("Impossible de charger le captcha");
+        const data = await res.json();
+        // Ensure absolute URL
+        if (data.captcha_image_url && !data.captcha_image_url.startsWith('http')) {
+          data.captcha_image_url = `https://vote-backend-api.onrender.com${data.captcha_image_url}`;
+        }
+        return data;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') throw new Error("Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.");
+        throw err;
       }
-      return data;
     },
 
     login: async (username, password, captchaKey, captchaValue) => {
@@ -173,9 +211,10 @@ export const api = {
           captcha_value: captchaValue
         })
       });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); } catch { data = {}; }
       if (!res.ok) {
-        throw new Error(data.message || "Identifiants ou code captcha incorrects");
+        throw new Error(parseDjangoError(data, "Identifiants ou code captcha incorrects"));
       }
       setToken(data.access);
       setRefreshToken(data.refresh);
@@ -194,9 +233,10 @@ export const api = {
           captcha_value: captchaValue
         })
       });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); } catch { data = {}; }
       if (!res.ok) {
-        throw new Error(data.message || "Erreur lors de la création du compte. Vérifiez les champs et le captcha.");
+        throw new Error(parseDjangoError(data, "Erreur lors de la création du compte. Vérifiez les champs et le captcha."));
       }
       return data;
     },

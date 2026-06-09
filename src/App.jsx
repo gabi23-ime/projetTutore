@@ -68,7 +68,7 @@ const Modal = ({open,onClose,title,children,wide=false}) => {
   return (
     <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"white",borderRadius:20,padding:24,maxWidth:wide?560:480,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 10px 40px rgba(0,0,0,.15)",animation:"mIn .2s ease"}}>
-        <style>{`@keyframes mIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
+        <style>{`@keyframes mIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}} @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{fontFamily:"'Sora',sans-serif",fontWeight:700,fontSize:"1.1rem",color:BK,margin:0}}>{title}</h3>
           <button onClick={onClose} style={{border:"none",background:GRAY,borderRadius:"50%",width:30,height:30,cursor:"pointer",fontSize:"1rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
@@ -221,6 +221,8 @@ export default function App() {
 
   // Captcha state
   const [captcha, setCaptcha] = useState({ key: "", imgUrl: "", val: "" });
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captchaError, setCaptchaError] = useState(false);
 
   // Login form
   const [loginUser, setLoginUser] = useState("");
@@ -276,6 +278,9 @@ export default function App() {
   };
 
   const loadNewCaptcha = async () => {
+    setCaptchaLoading(true);
+    setCaptchaError(false);
+    setCaptcha(prev => ({ ...prev, imgUrl: "", val: "" }));
     try {
       const data = await api.auth.getCaptcha();
       setCaptcha({
@@ -283,8 +288,12 @@ export default function App() {
         imgUrl: data.captcha_image_url,
         val: ""
       });
+      setCaptchaError(false);
     } catch (err) {
+      setCaptchaError(true);
       ntf("e", "Erreur CAPTCHA", err.message);
+    } finally {
+      setCaptchaLoading(false);
     }
   };
 
@@ -1000,16 +1009,32 @@ export default function App() {
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     {captcha.imgUrl ? (
-                      <img src={captcha.imgUrl} alt="Captcha" style={{
-                        height: 38,
-                        borderRadius: 6,
-                        border: `1px solid #D1D5DB`,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                        background: "white",
-                        objectFit: "contain"
-                      }} />
+                      <img
+                        src={captcha.imgUrl}
+                        alt="Captcha"
+                        onError={e => { e.currentTarget.style.display='none'; setCaptchaError(true); }}
+                        style={{
+                          height: 38,
+                          borderRadius: 6,
+                          border: `1px solid #D1D5DB`,
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                          background: "white",
+                          objectFit: "contain"
+                        }} />
+                    ) : captchaLoading ? (
+                      <div style={{ height: 38, minWidth: 110, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: "0.72rem", color: GD2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={G} strokeWidth="2.5" style={{ animation: "spin 1s linear infinite" }}>
+                          <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
+                        </svg>
+                        <span>Chargement...</span>
+                      </div>
+                    ) : captchaError ? (
+                      <div style={{ height: 38, minWidth: 110, background: "#FEF2F2", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: "0.72rem", color: "#DC2626", border: "1px solid #FECACA" }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span>Erreur — Rafraîchir</span>
+                      </div>
                     ) : (
-                      <div style={{ height: 38, width: 100, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>Chargement...</div>
+                      <div style={{ height: 38, minWidth: 110, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>En attente...</div>
                     )}
                     <button type="button" onClick={loadNewCaptcha} style={{
                       background: "white",
@@ -1086,16 +1111,32 @@ export default function App() {
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     {captcha.imgUrl ? (
-                      <img src={captcha.imgUrl} alt="Captcha" style={{
-                        height: 38,
-                        borderRadius: 6,
-                        border: `1px solid #D1D5DB`,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                        background: "white",
-                        objectFit: "contain"
-                      }} />
+                      <img
+                        src={captcha.imgUrl}
+                        alt="Captcha"
+                        onError={e => { e.currentTarget.style.display='none'; setCaptchaError(true); }}
+                        style={{
+                          height: 38,
+                          borderRadius: 6,
+                          border: `1px solid #D1D5DB`,
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                          background: "white",
+                          objectFit: "contain"
+                        }} />
+                    ) : captchaLoading ? (
+                      <div style={{ height: 38, minWidth: 110, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: "0.72rem", color: GD2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={G} strokeWidth="2.5" style={{ animation: "spin 1s linear infinite" }}>
+                          <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
+                        </svg>
+                        <span>Chargement...</span>
+                      </div>
+                    ) : captchaError ? (
+                      <div style={{ height: 38, minWidth: 110, background: "#FEF2F2", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: "0.72rem", color: "#DC2626", border: "1px solid #FECACA" }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span>Erreur — Rafraîchir</span>
+                      </div>
                     ) : (
-                      <div style={{ height: 38, width: 100, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>Chargement...</div>
+                      <div style={{ height: 38, minWidth: 110, background: GRAY, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: GD2 }}>En attente...</div>
                     )}
                     <button type="button" onClick={loadNewCaptcha} style={{
                       background: "white",
